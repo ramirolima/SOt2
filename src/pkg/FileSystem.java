@@ -243,6 +243,25 @@ public class FileSystem {
 	return -1;
 	}
 	
+	public static int discoveryFreeBlock() {		
+		DirEntry dir_entry = new DirEntry();
+		Boolean free;
+		
+		for (int i = root_block; i < blocks; ++i) {
+			free = true;
+			for (int x = 0; x < dir_entries; ++x) {				
+				dir_entry = readDirEntry(i, x);			
+				if(dir_entry.attributes != 0x00) {
+					free = false;
+					break;			
+				}				
+			}
+			if(free)
+				return i;
+		}		
+	return -1;
+	}
+	
 	public static int discoveryBlock(String[] path) {
 		DirEntry dir_entry = new DirEntry();
 		int currBlock = root_block;
@@ -291,26 +310,30 @@ public class FileSystem {
 		String[] path = inPath.split("/");
 		DirEntry dir_entry = new DirEntry();
 		int block = discoveryBlock(path);
+		int freeBlock = discoveryFreeBlock();
 		int freeEntry;
 		
-		if(block != -1) { 	
-			freeEntry = discoveryFreeEntry(block);	
-			if(freeEntry != -1) {
-				dir_entry = new DirEntry();				
-				byte[] namebytes = name.getBytes();
-				for (int i = 0; i < namebytes.length; i++)
-					dir_entry.filename[i] = namebytes[i];
-				dir_entry.attributes = 0x02;
-				
-				dir_entry.first_block = 6666;
-				dir_entry.size = 1024;
-				writeDirEntry(block, freeEntry, dir_entry);
+		if(freeBlock != -1) {
+			if(block != -1) { 	
+				freeEntry = discoveryFreeEntry(block);	
+				if(freeEntry != -1) {
+					dir_entry = new DirEntry();				
+					byte[] namebytes = name.getBytes();
+					for (int i = 0; i < namebytes.length; i++)
+						dir_entry.filename[i] = namebytes[i];
+					dir_entry.attributes = 0x02;
+					dir_entry.first_block = (short)freeBlock;
+					dir_entry.size = 1024;
+					writeDirEntry(block, freeEntry, dir_entry);
+				}
+				else
+					System.out.println("Espaço insuficiente no bloco!");
 			}
 			else
-				System.out.println("Espaço insuficiente!");
+				System.out.println("Caminho inexistente!");
 		}
 		else
-			System.out.println("Caminho inexistente!");
+			System.out.println("Espaço insuficiente no disco!");
 	}
 	
 	public static void main(String args[]) {
