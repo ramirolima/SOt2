@@ -171,7 +171,7 @@ public class FileSystem {
 		for (int i = 0; i < namebytes.length; i++)
 			dir_entry.filename[i] = namebytes[i];
 		dir_entry.attributes = 0x01;
-		dir_entry.first_block = 1111;
+		dir_entry.first_block = 5;
 		dir_entry.size = 222;
 		writeDirEntry(root_block, 0, dir_entry);
 		 
@@ -183,11 +183,11 @@ public class FileSystem {
 		for (int i = 0; i < namebytes.length; i++)
 			dir_entry.filename[i] = namebytes[i];
 		dir_entry.attributes = 0x02;
-		dir_entry.first_block = 2222;
+		dir_entry.first_block = 6;
 		dir_entry.size = 555;
 		writeDirEntry(root_block, 1, dir_entry);
 		
-		name = "";
+	name = "";
 		namebytes = new byte[1];
 		dir_entry = new DirEntry();
 		name = "diretorio1.1";
@@ -195,9 +195,9 @@ public class FileSystem {
 		for (int i = 0; i < namebytes.length; i++)
 			dir_entry.filename[i] = namebytes[i];
 		dir_entry.attributes = 0x02;
-		dir_entry.first_block = 7777;
+		dir_entry.first_block = 7;
 		dir_entry.size = 555;
-		writeDirEntry(2222, 1, dir_entry);
+		writeDirEntry(6, 1, dir_entry);
 		
 		name = "";
 		namebytes = new byte[1];
@@ -207,9 +207,9 @@ public class FileSystem {
 		for (int i = 0; i < namebytes.length; i++)
 			dir_entry.filename[i] = namebytes[i];
 		dir_entry.attributes = 0x01;
-		dir_entry.first_block = 9999;
+		dir_entry.first_block = 8;
 		dir_entry.size = 222;
-		writeDirEntry(2222, 3, dir_entry);
+		writeDirEntry(6, 3, dir_entry);
 		
 		name = "";
 		namebytes = new byte[1];
@@ -219,9 +219,9 @@ public class FileSystem {
 		for (int i = 0; i < namebytes.length; i++)
 			dir_entry.filename[i] = namebytes[i];
 		dir_entry.attributes = 0x01;
-		dir_entry.first_block = 8888;
+		dir_entry.first_block = 9;
 		dir_entry.size = 222;
-		writeDirEntry(7777, 3, dir_entry);
+		writeDirEntry(7, 3, dir_entry);
 	}
 	
 	public static byte[] equality(byte[] in) {		
@@ -243,23 +243,12 @@ public class FileSystem {
 	return -1;
 	}
 	
-	public static int discoveryFreeBlock() {		
-		DirEntry dir_entry = new DirEntry();
-		Boolean free;
-		
-		for (int i = root_block; i < blocks; ++i) {
-			free = true;
-			for (int x = 0; x < dir_entries; ++x) {				
-				dir_entry = readDirEntry(i, x);			
-				if(dir_entry.attributes != 0x00) {
-					free = false;
-					break;			
-				}				
-			}
-			if(free)
-				return i;
-		}		
-	return -1;
+	public static int discoveryFreeFat() {
+
+        for(int i=root_block+1; i<fat.length; i++)
+        	if(fat[i] == 0) return (short) i;        
+        
+        return -1;
 	}
 	
 	public static int discoveryBlock(String[] path) {
@@ -310,10 +299,13 @@ public class FileSystem {
 		String[] path = inPath.split("/");
 		DirEntry dir_entry = new DirEntry();
 		int block = discoveryBlock(path);
-		int freeBlock = discoveryFreeBlock();
 		int freeEntry;
+		int freeFat = discoveryFreeFat();
+		fat[freeFat] = 0x7fff;
+		writeFat("filesystem.dat",fat);
 		
-		if(freeBlock != -1) {
+		
+		if(freeFat != -1) {
 			if(block != -1) { 	
 				freeEntry = discoveryFreeEntry(block);	
 				if(freeEntry != -1) {
@@ -322,8 +314,8 @@ public class FileSystem {
 					for (int i = 0; i < namebytes.length; i++)
 						dir_entry.filename[i] = namebytes[i];
 					dir_entry.attributes = 0x02;
-					dir_entry.first_block = (short)freeBlock;
-					dir_entry.size = 1024;
+					dir_entry.first_block = (short)freeFat;
+					dir_entry.size = 0;
 					writeDirEntry(block, freeEntry, dir_entry);
 				}
 				else
@@ -334,6 +326,180 @@ public class FileSystem {
 		}
 		else
 			System.out.println("Espaço insuficiente no disco!");
+	}
+	
+	public static void create(String inPath, String name, int size, String content) {
+		String[] path = inPath.split("/");
+		DirEntry dir_entry = new DirEntry();
+		int block = discoveryBlock(path);
+		int freeEntry;
+		
+		if(block != -1) { 	
+			freeEntry = discoveryFreeEntry(block);	
+			if(freeEntry != -1) {					
+				if(size <= 1024)
+				{
+					int freeFat = discoveryFreeFat();						
+					fat[freeFat] = 0x7fff;
+					writeFat("filesystem.dat",fat);
+					
+					dir_entry = new DirEntry();				
+					byte[] namebytes = name.getBytes();
+					for (int i = 0; i < namebytes.length; i++)
+						dir_entry.filename[i] = namebytes[i];
+					dir_entry.attributes = 0x01;
+					dir_entry.first_block = (short)freeFat;
+					dir_entry.size = size;
+					writeDirEntry(block, freeEntry, dir_entry);
+											
+                    byte[] arrContent = content.getBytes();                        
+                    System.arraycopy(arrContent, 0, data_block, 0, arrContent.length);
+                    writeBlock("filesystem.dat",freeFat, data_block);						
+				}
+				else {
+					int nBlocks = (int)Math.ceil(size/1024.0);
+					int[] fatBlocks = new int[nBlocks];
+					
+					for(int i = 0; i < nBlocks; i++) {											
+						fatBlocks[i] = discoveryFreeFat();
+						fat[fatBlocks[i]] = 0x7fff;
+					}
+						
+					for(int i = 0; i < fatBlocks.length -1; i++)						
+						fat[fatBlocks[i]] = (short)fatBlocks[i+1];	
+					
+					dir_entry = new DirEntry();				
+					byte[] namebytes = name.getBytes();
+					for (int i = 0; i < namebytes.length; i++)
+						dir_entry.filename[i] = namebytes[i];
+					dir_entry.attributes = 0x01;
+					dir_entry.first_block = (short)fatBlocks[0];
+					dir_entry.size = size;
+					writeDirEntry(block, freeEntry, dir_entry);
+					
+					writeFat("filesystem.dat",fat);
+					
+					byte[] contentBytes = content.getBytes();
+					
+					int cont = 0;					
+					 for(int i=0; i<nBlocks; i++) {
+						 for (int x = 0; x < 1024; x++) {
+							 if(cont >= size)
+								 break;
+							 data_block[x] = contentBytes[cont];
+							 cont++;
+						 }
+					 
+						 writeBlock("filesystem.dat",fatBlocks[i], data_block);
+					 }
+				}
+			}
+			else
+				System.out.println("Espaço insuficiente no bloco!");
+		}
+		else
+			System.out.println("Caminho inexistente!");
+	}
+	
+	public static void unlink(String inPath, String name) {
+	}
+	
+	public static void write(String inPath, String name) {
+		
+		
+	}
+	
+	public static void append(String inPath, String name, int size, String content) {
+		String[] path = inPath.split("/");
+		DirEntry dir_entry = new DirEntry();
+		int block = discoveryBlock(path);
+		int fatBlock = 0;
+		
+		if(block != -1) { 	
+			byte[] pathByte = equality(name.getBytes());
+			
+			for (int x = 0; x < dir_entries; ++x) {				
+				dir_entry = readDirEntry(block, x);
+				
+				if(dir_entry.attributes == 0x01)				
+					if(Arrays.equals(dir_entry.filename, pathByte)) {						
+						fatBlock = dir_entry.first_block;
+						break;
+					}
+			}
+			
+			Boolean exit = false;			
+			while(!exit) {				
+				if(fat[fatBlock] != 0x7fff && fat[fatBlock] != 0)
+					fatBlock = fat[fatBlock];
+				else
+					exit = true;
+			}
+			
+			int nBlocks = (int)Math.ceil(size/1024.0);
+			int[] fatBlocks = new int[nBlocks];
+			
+			for(int i = 0; i < nBlocks; i++) {											
+				fatBlocks[i] = discoveryFreeFat();
+				fat[fatBlocks[i]] = 0x7fff;
+			}
+				
+			for(int i = 0; i < fatBlocks.length -1; i++)						
+				fat[fatBlocks[i]] = (short)fatBlocks[i+1];	
+	
+			writeFat("filesystem.dat",fat);
+			
+			byte[] contentBytes = content.getBytes();
+			
+			int cont = 0;					
+			 for(int i=0; i<nBlocks; i++) {
+				 for (int x = 0; x < 1024; x++) {
+					 if(cont >= size)
+						 break;
+					 data_block[x] = contentBytes[cont];
+					 cont++;
+				 }
+			 
+				 writeBlock("filesystem.dat",fatBlocks[i], data_block);
+			 }
+		}
+		else
+			System.out.println("Caminho inexistente!");
+	}
+
+	public static void read(String inPath, String name) {
+		String[] path = inPath.split("/");
+		DirEntry dir_entry = new DirEntry();
+		int block = discoveryBlock(path);
+		int fatBlock = 0;
+		
+		if(block != -1) { 	
+			byte[] pathByte = equality(name.getBytes());
+			
+			for (int x = 0; x < dir_entries; ++x) {				
+				dir_entry = readDirEntry(block, x);
+				
+				if(dir_entry.attributes == 0x01)				
+					if(Arrays.equals(dir_entry.filename, pathByte)) {						
+						fatBlock = dir_entry.first_block;
+						break;
+					}
+			}
+			
+			Boolean exit = false;
+			StringBuilder content = new StringBuilder();
+			while(!exit) {
+				content.append(readBlock("filesystem.dat",fatBlock));
+				if(fat[fatBlock] != 0x7fff && fat[fatBlock] != 0)
+					fatBlock = fat[fatBlock];
+				else
+					exit = true;
+			}
+			
+			System.out.println(content.toString());
+		}
+		else
+			System.out.println("Caminho inexistente!");
 	}
 	
 	public static void main(String args[]) {
@@ -365,7 +531,32 @@ public class FileSystem {
 					else
 						System.out.println("Comando inválido");
 					break;	
-					
+				case "create":
+					if(commands.length == 4)
+						create("",commands[1],Integer.parseInt(commands[2]), commands[3]);
+					else if(commands.length == 5)
+						create(commands[1],commands[2], Integer.parseInt(commands[3]), commands[4]);
+					else
+						System.out.println("Comando inválido");
+					break;	
+				case "unlink":
+					break;
+				case "write":
+					break;	
+				case "append":
+					if(commands.length == 4)
+						create("",commands[1],Integer.parseInt(commands[2]), commands[3]);
+					else if(commands.length == 5)
+						create(commands[1],commands[2], Integer.parseInt(commands[3]), commands[4]);
+					else
+						System.out.println("Comando inválido");
+					break;
+				case "read":
+					if(commands.length == 2)
+						read("", commands[1]);	
+					else
+						read(commands[1], commands[2]);	
+					break;	
 					
 					
 					
